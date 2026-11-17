@@ -1,8 +1,8 @@
 package io.github.romanvht.byedpi.fragments
 
 import android.content.Intent
-import android.net.Uri
 import android.content.SharedPreferences
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -64,16 +64,7 @@ class ByeDpiUISettingsFragment : PreferenceFragmentCompat() {
 
         findPreferenceNotNull<Preference>("ewenloy_tg_open_proxy_link")
             .setOnPreferenceClickListener {
-                val prefs = sharedPreferences ?: return@setOnPreferenceClickListener true
-                val host = prefs.getString("byedpi_proxy_ip", "127.0.0.1") ?: "127.0.0.1"
-                val port = prefs.getString("byedpi_proxy_port", "1080") ?: "1080"
-                val tgUri = Uri.parse("tg://socks?server=$host&port=$port")
-
-                try {
-                    startActivity(Intent(Intent.ACTION_VIEW, tgUri))
-                } catch (_: Exception) {
-                    Toast.makeText(requireContext(), R.string.ewenloy_tg_open_proxy_error, Toast.LENGTH_SHORT).show()
-                }
+                openTelegramProxyLink()
                 true
             }
 
@@ -89,6 +80,7 @@ class ByeDpiUISettingsFragment : PreferenceFragmentCompat() {
     override fun onResume() {
         super.onResume()
         sharedPreferences?.registerOnSharedPreferenceChangeListener(preferenceListener)
+        updateProxyLinkSummary()
         uiHandler.post(statusUpdater)
     }
 
@@ -153,6 +145,7 @@ class ByeDpiUISettingsFragment : PreferenceFragmentCompat() {
         splitTlsRecAtSni.isEnabled = tlsRecEnabled
 
         updateTelegramRuntimeStatus()
+        updateProxyLinkSummary()
     }
 
     private fun updateTelegramRuntimeStatus() {
@@ -170,6 +163,21 @@ class ByeDpiUISettingsFragment : PreferenceFragmentCompat() {
             else -> R.string.tg_ws_status_idle
         }
         statusPref.summary = getString(summaryRes)
+    }
+
+    private fun updateProxyLinkSummary() {
+        val prefs = sharedPreferences ?: return
+        val linkPref = findPreferenceNotNull<Preference>("ewenloy_tg_open_proxy_link")
+        val tgWsEnabled = prefs.getBoolean(EwenloyTgWsServiceExtension.EWENLOY_TG_WS_MODE_KEY, false)
+        linkPref.summary = getString(
+            if (tgWsEnabled) R.string.ewenloy_tg_open_proxy_summary_ws
+            else R.string.ewenloy_tg_open_proxy_summary
+        )
+    }
+
+    private fun openTelegramProxyLink() {
+        val prefs = sharedPreferences ?: return
+        TelegramProxyLink.open(requireContext(), prefs)
     }
 
     private fun showDiagnosticsDialog() {

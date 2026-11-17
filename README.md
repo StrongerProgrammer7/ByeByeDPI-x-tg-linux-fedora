@@ -1,4 +1,4 @@
-Прошло много времени с момента последнего обновления. Сейчас я снова сажусь за этот проект. Спасибо за донаты и комментарии! Но чтобы я мог быстрее всё исправлять, пожалуйста, пишите мне в Telegram, а не на почту - @ewenloy. Возможно, в будущем появится отдельная группа или канал для этого приложения. Спасибо!
+Прошло много времени с момента последнего обновления. Сейчас я снова сажусь за этот проект. Спасибо за донаты и комментарии! Возможно, в будущем появится отдельная группа или канал для этого приложения. Спасибо!
 
 <div align="center">
   
@@ -17,6 +17,9 @@
 <a href="https://github.com/EwenLoy/ByeByeDPI-x-tg/stargazers">
   <img src="https://img.shields.io/github/stars/EwenLoy/ByeByeDPI-x-tg?style=for-the-badge&logo=github&color=ffca28&labelColor=24292e" alt="Stars">
 </a>
+<a href="https://github.com/EwenLoy/ByeByeDPI-x-tg/releases">
+  <img src="https://img.shields.io/github/downloads/EwenLoy/ByeByeDPI-x-tg/total?style=for-the-badge&logo=github&label=Downloads&color=ff6d00&labelColor=24292e" alt="Downloads">
+</a>
 
 </div>
 <br>
@@ -32,7 +35,7 @@
 ## Возможности
 
 - **Два переключателя вместо десяти настроек:** сайты и Telegram управляются отдельно, статус обоих виден на главном экране.
-- **Интеграция с Telegram:** кнопка **«Применить в Telegram»** передаёт прокси в совместимые клиенты через `tg://proxy` (официальный, AyuGram, Plus Messenger, NekoGram и другие).
+- **Интеграция с Telegram:** кнопка **«Подключить прокси в Telegram»** передаёт MTProto-прокси в совместимые клиенты ссылкой `t.me/proxy` (официальный, AyuGram, Plus Messenger, NekoGram и другие).
 - **Проверка стратегий:** приложение само перебирает варианты обхода и показывает рабочие — как на реальных телефонах, так и «из коробки».
 - **Диагностика TG WS одной кнопкой:** сервис, порт, нативное ядро и доступность серверов проверяются сами, с человеческим вердиктом.
 - **Лог-вьюер:** живые логи обоих движков с фильтрами — видно, что происходит с подключением прямо сейчас.
@@ -60,7 +63,7 @@ Telegram → 127.0.0.1:1082 (MTProto) → движок на Rust → WSS (чер
 2. Установите приложение (Android попросит разрешить установку — это нормально, приложение мимо Google Play).
 3. Нажмите большую кнопку ⏻ — заработают сайты.
 4. Для Telegram включите зелёный переключатель **TG WS**.
-5. Нажмите **«Применить в Telegram»** и подтвердите прокси в мессенджере.
+5. Нажмите **«Подключить прокси в Telegram»** и подтвердите прокси в мессенджере.
 6. Не завелось? Меню теста → **«Проверить TG WS»** — приложение само покажет, где затык.
 
 ---
@@ -100,7 +103,7 @@ cd ByeByeDPI-x-tg
 
 <br>
 
-**Сайты:** [hufrea/byedpi](https://github.com/hufrea/byedpi) (ядро) → [romanvht/ByeByeDPI](https://github.com/romanvht/ByeByeDPI) (Android-обёртка) → **этот форк**
+**Сайты:** [hufrea/byedpi](https://github.com/hufrea/byedpi) (ядро) → [romanvht/ByeByeDPI](https://github.com/romanvht/ByeByeDPI) (Android-обёртка) → **этот форк** (текущая база — ByeByeDPI **1.8.2**, ядро byedpi `ba53229`)
 
 **Telegram:** идея — [Flowseal/tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy), Android-версия с Rust-движком — [amurcanov/tg-ws-proxy-android](https://github.com/amurcanov/tg-ws-proxy-android) → интегрировано в этот форк
 

@@ -11,21 +11,32 @@ import android.util.Log
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.edit
 import androidx.preference.*
 import io.github.romanvht.byedpi.R
 import io.github.romanvht.byedpi.BuildConfig
 import io.github.romanvht.byedpi.activities.TestActivity
-import io.github.romanvht.byedpi.data.AppStatus
 import io.github.romanvht.byedpi.data.Mode
+import io.github.romanvht.byedpi.data.PrivateDnsState
+import io.github.romanvht.byedpi.databinding.DialogDonateBinding
 import io.github.romanvht.byedpi.ewenloy.tgws.EwenloyTgWsServiceExtension
-import io.github.romanvht.byedpi.services.ServiceManager
-import io.github.romanvht.byedpi.services.appStatus
 import io.github.romanvht.byedpi.utility.*
+import androidx.core.net.toUri
 
 class MainSettingsFragment : PreferenceFragmentCompat() {
     companion object {
         private val TAG: String = MainSettingsFragment::class.java.simpleName
+
+        private const val DONATE_URL_AUTHOR = "https://dalink.to/ewenloy"
+        private const val DONATE_URL_CLOUDFLIPS = "https://pay.cloudtips.ru/p/92c754db"
+        private const val DONATE_URL_BOOSTY = "https://boosty.to/romanvht/donate"
+        private const val DONATE_URL_KEKSIK = "https://t.me/romanvht_donate_bot"
+        private const val CONTRIBUTOR_URL_HUFREA = "https://github.com/hufrea"
+        private const val CONTRIBUTOR_URL_FLOWSEAL = "https://github.com/Flowseal"
+        private const val CONTRIBUTOR_URL_AMURCANOV = "https://github.com/amurcanov"
     }
+
+    private val tgWsExt = EwenloyTgWsServiceExtension()
     private val uiHandler = Handler(Looper.getMainLooper())
     private val statusUpdater = object : Runnable {
         override fun run() {
@@ -65,28 +76,11 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
                 true
             }
 
+        tgWsExt.initialize(requireContext(), requireContext().getPreferences())
+
         findPreferenceNotNull<Preference>("ewenloy_tg_open_proxy_link")
             .setOnPreferenceClickListener {
-                val prefs = sharedPreferences ?: return@setOnPreferenceClickListener true
-                val tgWsEnabled = prefs.getBoolean(EwenloyTgWsServiceExtension.EWENLOY_TG_WS_MODE_KEY, false)
-                
-                if (tgWsEnabled) {
-                    // MTProto WS Proxy — используем tg://proxy?...&secret=
-                    val port = EwenloyTgWsServiceExtension.TG_WS_PORT
-                    val secretKey = prefs.getString(EwenloyTgWsServiceExtension.EWENLOY_TG_SECRET_KEY, "") ?: ""
-                    val secretForUrl = if (secretKey.isEmpty()) "00000000000000000000000000000000" else secretKey
-                    val proxyUrl = "https://t.me/proxy?server=127.0.0.1&port=$port&secret=dd$secretForUrl"
-                    applyToTelegramPackages(requireContext(), proxyUrl)
-                } else {
-                    // SOCKS5 режим
-                    val port = prefs.getString("byedpi_proxy_port", "1080") ?: "1080"
-                    val tgUri = Uri.parse("tg://socks?server=127.0.0.1&port=$port")
-                    try {
-                        startActivity(Intent(Intent.ACTION_VIEW, tgUri))
-                    } catch (_: Exception) {
-                        Toast.makeText(requireContext(), R.string.ewenloy_tg_open_proxy_error, Toast.LENGTH_SHORT).show()
-                    }
-                }
+                openTelegramProxyLink()
                 true
             }
 
@@ -99,31 +93,19 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
         findPreferenceNotNull<SwitchPreference>("ewenloy_tg_ws_mode_enabled")
             .setOnPreferenceChangeListener { _, _ ->
                 uiHandler.postDelayed({ updateProxyLinkSummary() }, 100)
-                if (appStatus.first == AppStatus.Running) {
-                    val mode = sharedPreferences?.mode() ?: Mode.VPN
-                    ServiceManager.restart(requireContext(), mode)
-                    Toast.makeText(requireContext(), R.string.service_restart, Toast.LENGTH_SHORT).show()
-                }
+                scheduleTgWsRefresh()
                 true
             }
 
         findPreferenceNotNull<SwitchPreference>("tg_ws_cf_enabled")
             .setOnPreferenceChangeListener { _, _ ->
-                if (appStatus.first == AppStatus.Running) {
-                    val mode = sharedPreferences?.mode() ?: Mode.VPN
-                    ServiceManager.restart(requireContext(), mode)
-                    Toast.makeText(requireContext(), R.string.service_restart, Toast.LENGTH_SHORT).show()
-                }
+                scheduleTgWsRefresh()
                 true
             }
 
         findPreferenceNotNull<ListPreference>("tg_ws_pool_size")
             .setOnPreferenceChangeListener { _, _ ->
-                if (appStatus.first == AppStatus.Running) {
-                    val mode = sharedPreferences?.mode() ?: Mode.VPN
-                    ServiceManager.restart(requireContext(), mode)
-                    Toast.makeText(requireContext(), R.string.service_restart, Toast.LENGTH_SHORT).show()
-                }
+                scheduleTgWsRefresh()
                 true
             }
 
@@ -135,21 +117,43 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
 
         findPreferenceNotNull<Preference>("battery_optimization")
             .setOnPreferenceClickListener {
-                BatteryUtils.requestBatteryOptimization(requireContext())
+                PermissionUtils.requestBatteryOptimization(requireContext())
                 true
             }
 
         findPreferenceNotNull<Preference>("storage_access")
             .setOnPreferenceClickListener {
-                StorageUtils.requestStoragePermission(this)
+                PermissionUtils.requestStorageAccess(this)
+                true
+            }
+
+        findPreferenceNotNull<Preference>("donate")
+            .setOnPreferenceClickListener {
+                showDonateDialog()
+                true
+            }
+
+        findPreferenceNotNull<Preference>("dns_ip_picker")
+            .setOnPreferenceClickListener {
+                if (PrivateDnsUtils.getState(requireContext()) is PrivateDnsState.Configured) {
+                    updatePreferences()
+                    PrivateDnsUtils.openSettings(requireContext())
+                } else {
+                    showDnsDialog()
+                }
+                true
+            }
+
+        findPreferenceNotNull<Preference>("private_dns")
+            .setOnPreferenceClickListener {
+                PrivateDnsUtils.openSettings(requireContext())
                 true
             }
 
         findPreferenceNotNull<Preference>("version").summary = BuildConfig.VERSION_NAME
-        findPreferenceNotNull<Preference>("byedpi_version").summary = "0.17.3"
+        findPreferenceNotNull<Preference>("byedpi_version").summary = "0.17.3 (ba53229)"
 
         updatePreferences()
-        updateProxyLinkSummary()
     }
 
     override fun onResume() {
@@ -157,6 +161,7 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
         sharedPreferences?.registerOnSharedPreferenceChangeListener(preferenceListener)
         uiHandler.post(statusUpdater)
         updatePreferences()
+        updateProxyLinkSummary()
     }
 
     override fun onPause() {
@@ -165,21 +170,13 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
         uiHandler.removeCallbacks(statusUpdater)
     }
 
-    private fun updateProxyLinkSummary() {
-        val prefs = sharedPreferences ?: return
-        val tgWsEnabled = prefs.getBoolean(EwenloyTgWsServiceExtension.EWENLOY_TG_WS_MODE_KEY, false)
-        val linkPref = findPreferenceNotNull<Preference>("ewenloy_tg_open_proxy_link")
-        if (tgWsEnabled) {
-            linkPref.summary = getString(R.string.ewenloy_tg_open_proxy_summary_ws)
-        } else {
-            linkPref.summary = getString(R.string.ewenloy_tg_open_proxy_summary)
-        }
-    }
-
     private fun updatePreferences() {
         val cmdEnable = findPreferenceNotNull<SwitchPreference>("byedpi_enable_cmd_settings").isChecked
         val mode = findPreferenceNotNull<ListPreference>("byedpi_mode").value.let { Mode.fromString(it) }
-        val dns = findPreferenceNotNull<EditTextPreference>("dns_ip")
+        val dns = findPreferenceNotNull<Preference>("dns_ip_picker")
+        val dnsEdit = findPreferenceNotNull<EditTextPreference>("dns_ip")
+        val privateDns = findPreferenceNotNull<Preference>("private_dns")
+        val privateDnsState = PrivateDnsUtils.getState(requireContext())
         val ipv6 = findPreferenceNotNull<SwitchPreference>("ipv6_enable")
         val proxy = findPreferenceNotNull<PreferenceCategory>("byedpi_proxy_category")
 
@@ -203,9 +200,14 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
         cmdSettings.isEnabled = cmdEnable
         proxyTest.isEnabled = cmdEnable
 
+        dns.summary = dnsSummary()
+        dnsEdit.isVisible = false
+        privateDns.summary = (privateDnsState as? PrivateDnsState.Configured)?.hostname
+        privateDns.isVisible = mode == Mode.VPN && privateDnsState is PrivateDnsState.Configured
+
         when (mode) {
             Mode.VPN -> {
-                dns.isVisible = true
+                dns.isVisible = privateDnsState !is PrivateDnsState.Configured
                 ipv6.isVisible = true
 
                 when (applistType.value) {
@@ -233,19 +235,136 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
-        if (BatteryUtils.isOptimizationDisabled(requireContext())) {
+        if (PermissionUtils.isBatteryOptimizationDisabled(requireContext())) {
             batteryOptimization.summary = getString(R.string.battery_optimization_disabled_summary)
         } else {
             batteryOptimization.summary = getString(R.string.battery_optimization_summary)
         }
 
-        if (StorageUtils.hasStoragePermission(requireContext())) {
+        if (PermissionUtils.hasStorageAccess(requireContext())) {
             storageAccess.summary = getString(R.string.storage_access_allowed_summary)
         } else {
             storageAccess.summary = getString(R.string.storage_access_summary)
         }
 
         updateTelegramRuntimeStatus()
+    }
+
+    private val dnsPresets: List<Pair<String, String>>
+        get() = listOf(
+            "" to getString(R.string.dns_system),
+            "8.8.8.8" to getString(R.string.dns_google),
+            "1.1.1.1" to getString(R.string.dns_cloudflare),
+            "9.9.9.9" to getString(R.string.dns_quad9),
+            "77.88.8.8" to getString(R.string.dns_yandex),
+        )
+
+    private fun dnsSummary(): String {
+        val ip = sharedPreferences?.getStringNotNull("dns_ip", "1.1.1.1") ?: "1.1.1.1"
+        val preset = dnsPresets.firstOrNull { it.first == ip } ?: return ip
+        return if (preset.first.isBlank()) preset.second else "${preset.second} ($ip)"
+    }
+
+    private fun showDnsDialog() {
+        val context = requireContext()
+        val presets = dnsPresets
+
+        val items = (presets.map { it.second } + getString(R.string.dns_custom)).toTypedArray()
+        val dnsPref = findPreferenceNotNull<EditTextPreference>("dns_ip")
+
+        AlertDialog.Builder(context)
+            .setTitle(getString(R.string.dbs_ip_setting))
+            .setItems(items) { _, which ->
+                if (which < presets.size) {
+                    sharedPreferences?.edit { putString("dns_ip", presets[which].first) }
+                } else {
+                    onDisplayPreferenceDialog(dnsPref)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showDonateDialog() {
+        val binding = DialogDonateBinding.inflate(layoutInflater)
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.donate))
+            .setView(binding.root)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create()
+
+        binding.donateAuthorButton.setOnClickListener {
+            openUrl(DONATE_URL_AUTHOR)
+            dialog.dismiss()
+        }
+        binding.donateContributorsButton.setOnClickListener {
+            dialog.dismiss()
+            showContributorsDialog()
+        }
+
+        dialog.show()
+    }
+
+    private fun showContributorsDialog() {
+        val items = arrayOf(
+            getString(R.string.donate_contrib_romanvht),
+            getString(R.string.donate_contrib_hufrea),
+            getString(R.string.donate_contrib_flowseal),
+            getString(R.string.donate_contrib_amurcanov),
+        )
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.donate_contributors_title))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> showUpstreamDonateDialog()
+                    1 -> openUrl(CONTRIBUTOR_URL_HUFREA)
+                    2 -> openUrl(CONTRIBUTOR_URL_FLOWSEAL)
+                    3 -> openUrl(CONTRIBUTOR_URL_AMURCANOV)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showUpstreamDonateDialog() {
+        val items = arrayOf(
+            getString(R.string.donate_cloudtips),
+            getString(R.string.donate_boosty),
+            getString(R.string.donate_telegram_bot),
+        )
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(getString(R.string.donate_support_romanvht))
+            .setItems(items) { _, which ->
+                when (which) {
+                    0 -> openUrl(DONATE_URL_CLOUDFLIPS)
+                    1 -> openUrl(DONATE_URL_BOOSTY)
+                    2 -> openUrl(DONATE_URL_KEKSIK)
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun openUrl(url: String) {
+        val intent = Intent(Intent.ACTION_VIEW, url.toUri())
+        startActivity(intent)
+    }
+
+    private fun scheduleTgWsRefresh() {
+        val prefs = sharedPreferences ?: return
+        uiHandler.postDelayed({ tgWsExt.refreshFromPreferences(prefs) }, 150)
+    }
+
+    private fun updateProxyLinkSummary() {
+        val prefs = sharedPreferences ?: return
+        val tgWsEnabled = prefs.getBoolean(EwenloyTgWsServiceExtension.EWENLOY_TG_WS_MODE_KEY, false)
+        val linkPref = findPreferenceNotNull<Preference>("ewenloy_tg_open_proxy_link")
+        linkPref.summary = getString(
+            if (tgWsEnabled) R.string.ewenloy_tg_open_proxy_summary_ws
+            else R.string.ewenloy_tg_open_proxy_summary
+        )
     }
 
     private fun updateTelegramRuntimeStatus() {
@@ -263,6 +382,31 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
             else -> R.string.tg_ws_status_idle
         }
         statusPref.summary = getString(summaryRes)
+    }
+
+    private fun showSecretKeyDialog() {
+        val ctx = requireContext()
+        val prefs = sharedPreferences ?: return
+        val secret = prefs.getString(EwenloyTgWsServiceExtension.PREF_SECRET_KEY, "") ?: ""
+        val displaySecret = if (secret.isEmpty()) getString(R.string.tg_ws_secret_not_generated) else secret
+
+        val tv = TextView(ctx).apply {
+            setPadding(40, 30, 40, 30)
+            textSize = 16f
+            text = displaySecret
+            setTextIsSelectable(true)
+        }
+
+        AlertDialog.Builder(ctx)
+            .setTitle(R.string.tg_ws_secret_dialog_title)
+            .setView(tv)
+            .setPositiveButton(R.string.tg_ws_secret_copy_btn) { _, _ ->
+                val cb = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cb.setPrimaryClip(android.content.ClipData.newPlainText("MTProto Secret", displaySecret))
+                Toast.makeText(ctx, R.string.tg_ws_secret_copied, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun showDiagnosticsDialog() {
@@ -296,91 +440,8 @@ class MainSettingsFragment : PreferenceFragmentCompat() {
         dialog.show()
     }
 
-    private fun showSecretKeyDialog() {
-        val ctx = requireContext()
+    private fun openTelegramProxyLink() {
         val prefs = sharedPreferences ?: return
-        val secret = prefs.getString(EwenloyTgWsServiceExtension.PREF_SECRET_KEY, "") ?: ""
-        val displaySecret = if (secret.isEmpty()) getString(R.string.tg_ws_secret_not_generated) else secret
-
-        val tv = TextView(ctx).apply {
-            setPadding(40, 30, 40, 30)
-            textSize = 16f
-            text = displaySecret
-            setTextIsSelectable(true)
-        }
-
-        AlertDialog.Builder(ctx)
-            .setTitle(R.string.tg_ws_secret_dialog_title)
-            .setView(tv)
-            .setPositiveButton(R.string.tg_ws_secret_copy_btn) { _, _ ->
-                val cb = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                cb.setPrimaryClip(android.content.ClipData.newPlainText("MTProto Secret", displaySecret))
-                Toast.makeText(ctx, R.string.tg_ws_secret_copied, Toast.LENGTH_SHORT).show()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
-    }
-
-    private fun applyToTelegramPackages(context: android.content.Context, url: String) {
-        val telegramPackages = listOf(
-            "org.telegram.messenger",
-            "com.radolyn.ayugram",
-            "com.exteragram.messenger",
-            "org.telegram.plus",
-            "ir.ilmili.telegraph",
-            "org.telegram.BifToGram",
-            "tw.nekomimi.nekogram",
-            "xyz.nextalone.nagram",
-            "uz.unnarsx.cherrygram",
-            "org.telegram.mdgram",
-            "org.forkclient.messenger.beta",
-            "app.nicegram",
-            "top.qwq2333.nullgram",
-            "com.iMe.android",
-            "ru.dahl.messenger",
-            "com.scriptsaz.litegram",
-            "org.thunderdog.challegram"
-        )
-
-        val pm = context.packageManager
-        val availablePackages = telegramPackages.filter {
-            try {
-                pm.getPackageInfo(it, 0)
-                true
-            } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
-                false
-            }
-        }
-
-        if (availablePackages.isEmpty()) {
-            Toast.makeText(context, R.string.ewenloy_tg_open_proxy_error, Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val targetedIntents = availablePackages.map { pkg ->
-            Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
-                setPackage(pkg)
-            }
-        }
-
-        if (targetedIntents.size == 1) {
-            val intent = targetedIntents.first().apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            try {
-                context.startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(context, R.string.ewenloy_tg_open_proxy_error, Toast.LENGTH_SHORT).show()
-            }
-        } else {
-            val chooserIntent = Intent.createChooser(targetedIntents.first(), getString(R.string.ewenloy_tg_choose_client))
-            chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, targetedIntents.drop(1).toTypedArray())
-            chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            try {
-                context.startActivity(chooserIntent)
-            } catch (e: Exception) {
-                Toast.makeText(context, R.string.ewenloy_tg_open_proxy_error, Toast.LENGTH_SHORT).show()
-            }
-        }
+        TelegramProxyLink.open(requireContext(), prefs)
     }
 }

@@ -35,7 +35,6 @@ app/src/main/jniLibs/
 # Signing secrets (never commit)
 *.jks
 *.keystore
-!app/release.keystore
 keystore.properties
 signing.properties
 
@@ -61,9 +60,15 @@ third-party/tg-ws-proxy-rs/target/
 # Local notes / scratch (not for GitHub)
 TODO.md
 sbox.md
+MIGRATION-TGWS.md
+UI-REDESIGN-PLAN.md
+AUTHORS.md
 *.private.md
 .env
 .env.*
+
+# Local build logs
+*.log
 
 # Fastlane local
 fastlane/report.xml

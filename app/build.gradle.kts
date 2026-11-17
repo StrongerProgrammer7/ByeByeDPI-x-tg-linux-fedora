@@ -1,4 +1,8 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -7,8 +11,42 @@ plugins {
 
 val abis = setOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
 
+// Release signing: secrets come from CI environment variables or local.properties.
+// The keystore itself must NOT be committed to the repository.
+val localProperties = Properties().apply {
+    val propertiesFile = rootProject.file("local.properties")
+    if (propertiesFile.exists()) propertiesFile.inputStream().use { load(it) }
+}
+
+fun signingSecret(name: String): String? = System.getenv(name) ?: localProperties.getProperty(name)
+
+val releaseKeystoreFile = file(signingSecret("KEYSTORE_FILE") ?: "release.keystore")
+val releaseKeystorePassword = signingSecret("KEYSTORE_PASSWORD")
+val releaseKeyAlias = signingSecret("KEY_ALIAS")
+val releaseKeyPassword = signingSecret("KEY_PASSWORD")
+val releaseSigningReady = releaseKeystoreFile.exists() &&
+        releaseKeystorePassword != null && releaseKeyAlias != null && releaseKeyPassword != null
+
+// Метка сборки: попадает в отчёт диагностики и в шапку файлового лога,
+// чтобы по присланному логу сразу было видно, какая именно сборка у человека.
+val buildGitHash: String = runCatching {
+    val process = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+        .directory(rootDir)
+        .redirectErrorStream(true)
+        .start()
+    val output = process.inputStream.bufferedReader().readText().trim()
+    process.waitFor()
+    output.ifEmpty { "nogit" }
+}.getOrElse { "nogit" }
+
+val buildTimeStamp: String = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+    .format(Date())
+
+val buildStamp: String = "$buildGitHash | $buildTimeStamp"
+
 android {
     namespace = "io.github.romanvht.byedpi"
+    //noinspection GradleDependency
     compileSdk = 36
 
     defaultConfig {
@@ -16,8 +54,11 @@ android {
         minSdk = 21
         //noinspection OldTargetApi
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 27
+        versionName = "2.0.7"
+
+        // Build stamp: shows up in diagnostics and in the log header.
+        buildConfigField("String", "BUILD_STAMP", "\"$buildStamp\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -33,10 +74,12 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("release.keystore")
-            storePassword = "byedpixtg"
-            keyAlias = "byedpixtg"
-            keyPassword = "byedpixtg"
+            if (releaseSigningReady) {
+                storeFile = releaseKeystoreFile
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
         }
     }
 
@@ -46,7 +89,11 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("release")
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                println("WARNING: release signing is not configured; the release APK will be UNSIGNED (set KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD and provide the keystore file)")
+            }
         }
         debug {
             buildConfigField("String", "VERSION_NAME",  "\"${defaultConfig.versionName}-debug\"")
@@ -99,14 +146,14 @@ android {
 }
 
 dependencies {
-    implementation("androidx.fragment:fragment-ktx:1.8.9")
+    //noinspection GradleDependency
     implementation("androidx.core:core-ktx:1.17.0")
+    implementation("androidx.fragment:fragment-ktx:1.8.9")
     implementation("androidx.appcompat:appcompat:1.7.1")
-    implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
-    implementation("androidx.lifecycle:lifecycle-service:2.9.4")
+    implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("com.google.android.material:material:1.13.0")
-    implementation("com.google.code.gson:gson:2.13.2")
+    implementation("com.google.code.gson:gson:2.14.0")
     // JNA for libtgwsproxy.so (Rust MTProto proxy)
     implementation("net.java.dev.jna:jna:5.14.0@aar")
     // DataStore for TG WS proxy settings
